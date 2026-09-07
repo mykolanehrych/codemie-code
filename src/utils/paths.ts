@@ -375,12 +375,15 @@ export function getCodemiePath(...paths: string[]): string {
   return path.join(getCodemieHome(), ...paths);
 }
 
-// Matches Claude Desktop sandbox session directories.
-// Real path format observed in logs:
-//   .../local-agent-mode-sessions/<session-uuid>/<uuid>/local_<full-uuid>/outputs
-// The local_ segment always contains a full UUID (8-4-4-4-12 hex groups with dashes).
-// Matching the full UUID format avoids false positives on user directories named local_<8hex>.
-const CLAUDE_DESKTOP_SANDBOX_RE = /\/local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i;
+// Matches Claude Desktop sandbox session directories, which carry no user project.
+// Two shapes are recognised:
+//   1. Anything under the sandbox root `local-agent-mode-sessions/`. Desktop has renamed the
+//      per-session directory inside it (`local_<full-uuid>/` -> `<short-id>/`), so anchoring on
+//      the root keeps this stable across further renames.
+//   2. A legacy `local_<full-uuid>` directory anywhere, for paths recorded without that root.
+//      The full UUID shape avoids false positives on user directories named `local_<8hex>`.
+const CLAUDE_DESKTOP_SANDBOX_RE =
+  /\/local-agent-mode-sessions\/|\/local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i;
 
 /**
  * Extract parent/repo format from a working directory path.

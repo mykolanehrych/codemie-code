@@ -13,6 +13,7 @@ import type { ProxyConfig } from '../providers/plugins/sso/index.js';
 import '../providers/plugins/sso/proxy/plugins/index.js'; // Auto-register core plugins
 import { ClaudeDesktopTelemetryAdapter } from '../telemetry/clients/claude-desktop/ClaudeDesktopTelemetryAdapter.js';
 import { DesktopTelemetryRuntime } from '../telemetry/runtime/DesktopTelemetryRuntime.js';
+import { DesktopRepositoryResolver } from '../telemetry/runtime/DesktopRepositoryResolver.js';
 import { getDirname } from '../utils/paths.js';
 import { logger } from '../utils/logger.js';
 import { ProxyWatcher } from '../cli/commands/proxy/watcher.js';
@@ -140,9 +141,10 @@ try {
   config.pinnedPort = true;
 
   if (config.telemetryMode === 'claude-desktop') {
-    const sessionRepositoryMap = new Map<string, string>();
-    config.sessionRepositoryMap = sessionRepositoryMap;
-    config.sessionCoworkMap = new Set<string>();
+    // One resolver shared by the proxy's header injection and the telemetry poll, so both
+    // read and write the same attribution cache.
+    const repositoryResolver = new DesktopRepositoryResolver();
+    config.desktopRepositoryResolver = repositoryResolver;
 
     telemetryRuntime = new DesktopTelemetryRuntime(
       new ClaudeDesktopTelemetryAdapter(),
@@ -156,7 +158,7 @@ try {
         syncCodeMieUrl: config.syncCodeMieUrl,
         pollIntervalMs: config.telemetryPollIntervalMs ?? 10000,
         inactivityTimeoutMs: config.telemetryInactivityTimeoutMs ?? 300000,
-        sessionRepositoryMap,
+        repositoryResolver,
       }
     );
 

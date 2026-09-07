@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import { readdir, readFile } from 'fs/promises';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { resolveHomeDir, normalizePathSeparators } from '@/utils/paths.js';
 import type { LocalTelemetryDiscoveredSession } from '@/telemetry/runtime/types.js';
 import { logger } from '@/utils/logger.js';
@@ -21,6 +21,34 @@ interface DesktopMetadata {
   lastActivityAt: number;
   model?: string;
   isArchived?: boolean;
+}
+
+/**
+ * Short form of a Desktop session id: `local_89643b28-ed6d-…` -> `89643b28`.
+ */
+function shortSessionId(sessionId: string): string {
+  return sessionId.replace(/^local_/, '').split('-')[0];
+}
+
+/**
+ * Locates the session's `audit.jsonl`, which Cowork writes next to its metadata file.
+ *
+ * Claude Desktop has used two directory layouts: one named after the full metadata file
+ * (`local_<uuid>/`) and the current one named after the short session id (`89643b28/`).
+ * Both are probed so a Desktop update cannot silently drop Cowork sessions from discovery.
+ */
+function resolveAuditTranscriptPath(metadataPath: string, sessionId: string): string | null {
+  const candidates = [
+    metadataPath.replace(/\.json$/, ''),
+    join(dirname(metadataPath), shortSessionId(sessionId))
+  ];
+
+  for (const dir of candidates) {
+    const candidate = join(dir, 'audit.jsonl');
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
 }
 
 async function loadCompanionMetadata(metadataPath: string): Promise<DesktopMetadata | null> {
@@ -143,14 +171,12 @@ export async function discoverClaudeDesktopSessions(
       const metadata = JSON.parse(await readFile(metadataPath, 'utf-8')) as DesktopMetadata;
       const companionMetadata = await loadCompanionMetadata(metadataPath);
       const transcriptDir = metadataPath.replace(/\.json$/, '');
-      const auditTranscriptPath = join(transcriptDir, 'audit.jsonl');
+      const auditTranscriptPath = resolveAuditTranscriptPath(metadataPath, metadata.sessionId);
       const claudeTranscriptPath = await resolveClaudeTranscriptPath({
         ...companionMetadata,
         ...metadata
       });
-      const transcriptPath = existsSync(auditTranscriptPath)
-        ? auditTranscriptPath
-        : claudeTranscriptPath;
+      const transcriptPath = auditTranscriptPath ?? claudeTranscriptPath;
 
       if (!metadata.sessionId.startsWith('local_')) continue;
       // Skip until the inner Claude session id exists. Until then agentSessionId

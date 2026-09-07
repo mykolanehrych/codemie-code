@@ -81,7 +81,11 @@ export class DesktopTelemetryRuntime {
         lastPollAt: new Date(this.lastPollAt).toISOString(),
       });
       for (const discovered of discoveredSessions) {
-        if (discovered.createdAt < this.startedAt) {
+        // Gate on activity, not creation time. A conversation opened before the daemon
+        // started is still live work the moment the user types into it, and keying on
+        // createdAt made every proxy restart orphan all existing chats permanently.
+        // Sessions genuinely idle since startup are still skipped, so no backlog is replayed.
+        if (discovered.updatedAt < this.startedAt) {
           continue;
         }
 
@@ -130,6 +134,19 @@ export class DesktopTelemetryRuntime {
       discovered.externalSessionId
     );
     if (existing) {
+      // A previous daemon stop finalized this session. New activity means the conversation
+      // continued, so reopen it — otherwise finalizeSession's completed-status early return
+      // would leave the resumed stretch without an end metric or duration.
+      if (existing.status === 'completed') {
+        logger.info('[desktop-telemetry] Reopening completed session — activity resumed', {
+          sessionId: existing.sessionId,
+          externalSessionId: discovered.externalSessionId,
+        });
+        existing.status = 'active';
+        delete existing.endTime;
+        delete existing.reason;
+      }
+
       setRuntimeCheckpoint(existing, {
         externalSessionId: discovered.externalSessionId,
         transcriptPath: discovered.transcriptPath,
@@ -155,15 +172,10 @@ export class DesktopTelemetryRuntime {
       project,
     });
 
-    // Don't overwrite a value the header-injection plugin's per-request lookup (lsof/session-file
-    // scan) may have already resolved for this session — that path runs first and is more precise
-    // (process-level CWD vs. this poll's session-file-derived workingDirectory).
-    if (!discovered.agentSessionId.startsWith('local_') && !this.config.sessionRepositoryMap?.has(discovered.agentSessionId)) {
-      this.config.sessionRepositoryMap?.set(
-        discovered.agentSessionId,
-        repository || 'Cowork'
-      );
-    }
+    // Publish through the shared resolver: it keeps a confirmed per-request lookup ahead of
+    // this poll-derived directory (process CWD is more precise), while still replacing a
+    // tentative TTL-window guess.
+    this.config.repositoryResolver?.recordDiscoveredSession(discovered.agentSessionId, repository);
 
     const session: Session = {
       sessionId: randomUUID(),

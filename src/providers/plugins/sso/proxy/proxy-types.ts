@@ -6,6 +6,7 @@
 
 import { IncomingHttpHeaders } from 'http';
 import type { CodeMieConfigOptions } from '../../../../env/types.js';
+import type { DesktopRepositoryResolver } from '../../../../telemetry/runtime/DesktopRepositoryResolver.js';
 
 /**
  * Proxy configuration
@@ -34,9 +35,8 @@ export interface ProxyConfig {
   telemetryMode?: 'none' | 'claude-desktop';
   telemetryPollIntervalMs?: number;
   telemetryInactivityTimeoutMs?: number;
-  sessionRepositoryMap?: Map<string, string>;
-  sessionCoworkMap?: Set<string>;
-  lastDesktopRepo?: { repo: string; branch: string | null; ts: number };
+  /** Shared Desktop attribution resolver; its presence enables Desktop repository lookup. */
+  desktopRepositoryResolver?: DesktopRepositoryResolver;
   triggerPoll?: () => Promise<void>;
   /**
    * When true, the server retries the SAME configured port on EADDRINUSE
